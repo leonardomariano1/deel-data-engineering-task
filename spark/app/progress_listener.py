@@ -33,6 +33,7 @@ class ProgressListener(StreamingQueryListener):
     def onQueryProgress(self, event):
         p = event.progress
         d = p.durationMs or {}
+        conn = None
         try:
             conn = self._connect()
             with conn, conn.cursor() as cur:
@@ -43,9 +44,11 @@ class ProgressListener(StreamingQueryListener):
                     d.get("latestOffset"), d.get("walCommit"),
                     json.dumps([json.loads(s.json) for s in p.sources]),
                 ))
-            conn.close()
         except Exception:  # metrics must never break the pipeline
             log.exception("could not persist streaming progress")
+        finally:
+            if conn is not None:
+                conn.close()
 
 
 def _num(x):
