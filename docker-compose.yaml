@@ -20,6 +20,9 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    volumes:
+      - zk-data:/var/lib/zookeeper/data
+      - zk-log:/var/lib/zookeeper/log
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -36,6 +39,8 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
     ports:
       - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
 
   kafka-connect:
     image: debezium/connect:2.4
@@ -133,6 +138,7 @@ services:
       - KAFKA_BOOTSTRAP=kafka:29092
       - TRIGGER_INTERVAL=5 seconds
       - MAX_OFFSETS_PER_TRIGGER=200000
+      - KAFKA_MIN_PARTITIONS=8
       - CHECKPOINT_LOCATION=/checkpoints/orders_cdc
       - ANALYTICS_DB_HOST=analytics-db
     command: ["/opt/app/submit.sh"]
@@ -155,5 +161,8 @@ services:
 
 volumes:
   pg-data:
+  zk-data:
+  zk-log:
+  kafka-data:
   analytics-data:
   spark-checkpoints:
