@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACME Open Orders</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f4f2;
+    --surface-1: #fcfcfb;
+    --border: #e3e2de;
+    --grid: #ecebe7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #8a8984;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --good: #008300;
+    --warning: #b26d00;
+    --critical: #c62828;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+         font: 14px/1.45 Inter, system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+           padding: 20px 24px 8px; max-width: 1280px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  h1 small { display: block; font-size: 13px; font-weight: 400; color: var(--text-secondary); }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+          background: var(--surface-1); border: 1px solid var(--border); font-size: 13px; color: var(--text-secondary); }
+  .pill svg { width: 15px; height: 15px; }
+  .pill.good svg { color: var(--good); } .pill.warning svg { color: var(--warning); } .pill.critical svg { color: var(--critical); }
+  main { max-width: 1280px; margin: 0 auto; padding: 8px 24px 40px; display: grid; gap: 16px;
+         grid-template-columns: repeat(12, 1fr); }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; min-width: 0; }
+  .card h2 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+  .card .sub { font-size: 12px; color: var(--text-muted); margin: 0 0 14px; }
+  .kpi { grid-column: span 3; }
+  .kpi .label { font-size: 12px; color: var(--text-secondary); }
+  .kpi .value { font: 500 28px/1.2 "JetBrains Mono", monospace; margin-top: 6px; }
+  .span-8 { grid-column: span 8; } .span-4 { grid-column: span 4; }
+  .span-6 { grid-column: span 6; } .span-12 { grid-column: span 12; }
+  @media (max-width: 900px) { .kpi, .span-8, .span-4, .span-6 { grid-column: span 12; } main, header { padding-left: 16px; padding-right: 16px; } }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .bars { display: grid; gap: 6px; }
+  .bar-row { display: grid; grid-template-columns: 150px 1fr 70px; align-items: center; gap: 10px; font-size: 13px; }
+  .bar-row .name { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-row .num { font-family: "JetBrains Mono", monospace; font-size: 12px; text-align: right; color: var(--text-primary); }
+  .track { display: flex; gap: 2px; height: 14px; }
+  .seg { height: 100%; min-width: 2px; }
+  .seg:first-child { border-radius: 4px 0 0 4px; } .seg:last-child { border-radius: 0 4px 4px 0; }
+  .seg:only-child { border-radius: 4px; }
+  .seg:hover { filter: brightness(0.9); }
+  ol.rank { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  ol.rank li { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: baseline;
+               padding-bottom: 10px; border-bottom: 1px solid var(--grid); }
+  ol.rank li:last-child { border-bottom: 0; padding-bottom: 0; }
+  ol.rank .r { font: 500 13px "JetBrains Mono", monospace; color: var(--text-muted); }
+  ol.rank .v { font: 500 18px "JetBrains Mono", monospace; }
+  ol.rank .meta { font-size: 12px; color: var(--text-muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; font-weight: 500; color: var(--text-secondary); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--grid); font-family: "JetBrains Mono", monospace; }
+  td.t, th.t { text-align: right; }
+  .scroll { overflow-x: auto; }
+  .lat { display: flex; align-items: flex-end; gap: 2px; height: 90px; border-bottom: 1px solid var(--border); }
+  .lat div { flex: 1; background: var(--series-1); border-radius: 4px 4px 0 0; min-height: 2px; }
+  .empty { color: var(--text-muted); font-size: 13px; }
+  #tip { position: fixed; pointer-events: none; background: var(--text-primary); color: #fff; font-size: 12px;
+         padding: 6px 9px; border-radius: 6px; opacity: 0; transition: opacity .08s; z-index: 10; white-space: nowrap; }
+  footer { max-width: 1280px; margin: 0 auto; padding: 0 24px 24px; color: var(--text-muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Open orders, live<small>ACME Delivery Services &middot; Debezium &rarr; Spark Structured Streaming &rarr; Postgres marts</small></h1>
+  <span id="fresh" class="pill">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <span>loading</span>
+  </span>
+</header>
+<main>
+  <section class="card kpi"><div class="label">Open orders</div><div class="value" id="k-open">-</div></section>
+  <section class="card kpi"><div class="label">Pending item units</div><div class="value" id="k-qty">-</div></section>
+  <section class="card kpi"><div class="label">Orders tracked (all time)</div><div class="value" id="k-orders">-</div></section>
+  <section class="card kpi"><div class="label">Status transitions recorded</div><div class="value" id="k-events">-</div></section>
+
+  <section class="card span-8">
+    <h2>Open orders by delivery date and status</h2>
+    <p class="sub">Q1 &middot; one row per delivery date, segments by status</p>
+    <div class="legend" id="q1-legend"></div>
+    <div class="bars" id="q1"></div>
+  </section>
+  <section class="card span-4">
+    <h2>Top 3 delivery dates</h2>
+    <p class="sub">Q2 &middot; most open orders, ties share a rank</p>
+    <ol class="rank" id="q2"></ol>
+  </section>
+
+  <section class="card span-8">
+    <h2>Pending item units by product</h2>
+    <p class="sub">Q3 &middot; sum of quantity on items of open orders</p>
+    <div class="bars" id="q3"></div>
+  </section>
+  <section class="card span-4">
+    <h2>Top 3 customers</h2>
+    <p class="sub">Q4 &middot; most open (not completed) orders</p>
+    <ol class="rank" id="q4"></ol>
+  </section>
+
+  <section class="card span-6">
+    <h2>End-to-end latency per micro-batch</h2>
+    <p class="sub">source commit &rarr; mart commit, last 30 non-empty batches (ms)</p>
+    <div class="lat" id="lat"></div>
+  </section>
+  <section class="card span-6">
+    <h2>Recent micro-batches</h2>
+    <p class="sub">from ops.batch_log</p>
+    <div class="scroll"><table id="batches"></table></div>
+  </section>
+</main>
+<footer>Refreshes every 5 s &middot; API docs at <a href="/docs">/docs</a></footer>
+<div id="tip"></div>
+<script>
+const STATUS_COLORS = { PENDING: "var(--series-1)", PROCESSING: "var(--series-2)", REPROCESSING: "var(--series-3)" };
+const fmt = n => Number(n).toLocaleString("en-US");
+const $ = id => document.getElementById(id);
+const tip = $("tip");
+document.addEventListener("mousemove", e => {
+  const t = e.target.closest("[data-tip]");
+  if (!t) { tip.style.opacity = 0; return; }
+  tip.textContent = t.dataset.tip; tip.style.opacity = 1;
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + "px";
+  tip.style.top = (e.clientY + 14) + "px";
+});
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function get(path) { const r = await fetch(path); if (!r.ok) throw new Error(path); return r.json(); }
+
+function renderQ1(rows) {
+  const statuses = Object.keys(STATUS_COLORS).concat([...new Set(rows.map(r => r.status))].filter(s => !STATUS_COLORS[s]));
+  $("q1-legend").innerHTML = statuses.map(s => `<span><i style="background:${STATUS_COLORS[s] || "var(--text-muted)"}"></i>${esc(s)}</span>`).join("");
+  const byDate = {};
+  rows.forEach(r => { (byDate[r.delivery_date] ||= {})[r.status] = r.open_orders; });
+  const dates = Object.keys(byDate).sort();
+  if (!dates.length) { $("q1").innerHTML = '<p class="empty">No open orders.</p>'; return; }
+  const max = Math.max(...dates.map(d => Object.values(byDate[d]).reduce((a, b) => a + b, 0)));
+  $("q1").innerHTML = dates.map(d => {
+    const total = Object.values(byDate[d]).reduce((a, b) => a + b, 0);
+    const segs = statuses.filter(s => byDate[d][s]).map(s =>
+      `<div class="seg" style="width:${byDate[d][s] / max * 100}%;background:${STATUS_COLORS[s] || "var(--text-muted)"}" data-tip="${esc(d)} · ${esc(s)}: ${fmt(byDate[d][s])}"></div>`).join("");
+    return `<div class="bar-row"><span class="name">${esc(d)}</span><div class="track">${segs}</div><span class="num">${fmt(total)}</span></div>`;
+  }).join("");
+}
+
+function renderSingleBars(el, rows, label, value, tipFn) {
+  if (!rows.length) { el.innerHTML = '<p class="empty">Nothing pending.</p>'; return; }
+  const max = Math.max(...rows.map(value));
+  el.innerHTML = rows.map(r => `<div class="bar-row"><span class="name">${esc(label(r))}</span>
+    <div class="track"><div class="seg" style="width:${value(r) / max * 100}%;background:var(--series-1)" data-tip="${esc(tipFn(r))}"></div></div>
+    <span class="num">${fmt(value(r))}</span></div>`).join("");
+}
+
+function renderRank(el, rows, title, value, meta) {
+  el.innerHTML = rows.length ? rows.map(r => `<li><span class="r">#${r.rnk}</span><div><div>${esc(title(r))}</div><div class="meta">${esc(meta(r))}</div></div><span class="v">${fmt(value(r))}</span></li>`).join("")
+    : '<li class="empty">No open orders.</li>';
+}
+
+function renderFreshness(f) {
+  const el = $("fresh");
+  const age = f.seconds_since_last_commit;
+  el.className = "pill " + (age == null ? "" : age < 90 ? "good" : age < 300 ? "warning" : "critical");
+  el.querySelector("span").textContent = age == null ? "no batches yet"
+    : `last commit ${age}s ago · e2e latency ${fmt(f.last_e2e_latency_ms ?? 0)} ms`;
+}
+
+async function refresh() {
+  try {
+    const [s, q1, q2, q3, q4, p] = await Promise.all([
+      get("/api/summary"), get("/api/open-orders"), get("/api/top-delivery-dates"),
+      get("/api/pending-items"), get("/api/top-customers"), get("/api/pipeline?limit=60")]);
+    $("k-open").textContent = fmt(s.open_orders); $("k-qty").textContent = fmt(s.pending_quantity);
+    $("k-orders").textContent = fmt(s.orders_total); $("k-events").textContent = fmt(s.status_events);
+    renderFreshness(p.freshness);
+    renderQ1(q1);
+    renderRank($("q2"), q2, r => r.delivery_date, r => r.open_orders, () => "open orders");
+    renderSingleBars($("q3"), q3, r => r.product_name || `product ${r.product_id}`, r => r.pending_quantity,
+      r => `${r.product_name}: ${fmt(r.pending_quantity)} units in ${fmt(r.pending_lines)} lines`);
+    renderRank($("q4"), q4, r => r.customer_name || `customer ${r.customer_id}`, r => r.open_orders,
+      r => `${r.orders_status_pending} in PENDING status`);
+    const lat = p.batches.filter(b => b.e2e_latency_ms != null && b.input_rows > 0).slice(0, 30).reverse();
+    const lmax = Math.max(1, ...lat.map(b => b.e2e_latency_ms));
+    $("lat").innerHTML = lat.map(b => `<div style="height:${b.e2e_latency_ms / lmax * 100}%" data-tip="batch ${b.batch_id}: ${fmt(b.e2e_latency_ms)} ms, ${fmt(b.input_rows)} rows"></div>`).join("");
+    $("batches").innerHTML = "<tr><th>batch</th><th class=t>rows</th><th class=t>orders</th><th class=t>items</th><th class=t>stage ms</th><th class=t>merge ms</th><th class=t>e2e ms</th></tr>" +
+      p.batches.slice(0, 8).map(b => `<tr><td>${b.batch_id}</td><td class=t>${fmt(b.input_rows)}</td><td class=t>${fmt(b.orders_rows)}</td><td class=t>${fmt(b.order_items_rows)}</td><td class=t>${fmt(b.stage_ms)}</td><td class=t>${fmt(b.merge_ms)}</td><td class=t>${b.e2e_latency_ms == null ? "" : fmt(b.e2e_latency_ms)}</td></tr>`).join("");
+  } catch (e) { console.error(e); }
+}
+refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>

@@ -91,8 +91,7 @@ services:
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master",
               "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
     ports:
-      - "8080:8080"
-      - "7077:7077"
+      - "8090:8080"
 
   spark-worker-1: &worker
     image: acme/spark:3.5.1
@@ -104,12 +103,12 @@ services:
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker",
               "--webui-port", "8081", "spark://spark-master:7077"]
     ports:
-      - "8081:8081"
+      - "8091:8081"
 
   spark-worker-2:
     <<: *worker
     ports:
-      - "8082:8081"
+      - "8092:8081"
 
   spark-app:
     image: acme/spark:3.5.1
@@ -147,7 +146,7 @@ services:
       - ANALYTICS_DSN=postgresql://analytics:analytics@analytics-db:5432/analytics
       - SOURCE_DSN=postgresql://finance_db_user:1234@transactions-db:5432/finance_db
     ports:
-      - "8000:8000"
+      - "8010:8000"
 
 volumes:
   pg-data:
