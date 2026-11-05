@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 740" font-family="Inter, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52514e"/>
+    </marker>
+    <style>
+      .box{fill:#fcfcfb;stroke:#c9c8c2;stroke-width:1.5;rx:12}
+      .zone{fill:#f4f4f2;stroke:#e3e2de;stroke-width:1.5;rx:16}
+      .t{font-size:17px;font-weight:600;fill:#0b0b0b}
+      .s{font-size:13px;fill:#52514e}
+      .m{font-size:12px;fill:#52514e;font-family:"JetBrains Mono",Menlo,monospace}
+      .z{font-size:13px;font-weight:600;fill:#8a8984;letter-spacing:.08em}
+      .l{stroke:#52514e;stroke-width:1.6;fill:none;marker-end:url(#a)}
+      .acc{fill:#2a78d6}
+      .lab{font-size:12px;fill:#2a78d6;font-weight:600}
+    </style>
+  </defs>
+  <rect width="1400" height="740" fill="#ffffff"/>
+
+  <!-- zones -->
+  <rect class="zone" x="20" y="40" width="300" height="680"/>
+  <text class="z" x="40" y="70">SOURCE (PROVIDED)</text>
+  <rect class="zone" x="340" y="40" width="520" height="680"/>
+  <text class="z" x="360" y="70">PROCESSING (SPARK STANDALONE)</text>
+  <rect class="zone" x="880" y="40" width="500" height="680"/>
+  <text class="z" x="900" y="70">ANALYTICAL STORE AND SERVING</text>
+
+  <!-- source -->
+  <rect class="box" x="45" y="95" width="250" height="120"/>
+  <text class="t" x="65" y="125">Postgres 15 (OLTP)</text>
+  <text class="s" x="65" y="148">operations.* + pg_cron generator</text>
+  <text class="s" x="65" y="168">wal_level=logical</text>
+  <text class="s" x="65" y="188">REPLICA IDENTITY FULL</text>
+
+  <rect class="box" x="45" y="265" width="250" height="110"/>
+  <text class="t" x="65" y="295">Debezium 2.4</text>
+  <text class="s" x="65" y="318">Kafka Connect, pgoutput slot</text>
+  <text class="s" x="65" y="338">initial snapshot + changes</text>
+  <text class="m" x="65" y="358">decimal=string</text>
+
+  <rect class="box" x="45" y="425" width="250" height="160"/>
+  <text class="t" x="65" y="455">Kafka 7.5</text>
+  <text class="m" x="65" y="480">finance_db.operations.</text>
+  <text class="m" x="80" y="500">customers</text>
+  <text class="m" x="80" y="518">products</text>
+  <text class="m" x="80" y="536">orders</text>
+  <text class="m" x="80" y="554">order_items</text>
+
+  <path class="l" d="M170 215 V265"/>
+  <text class="s" x="180" y="245">WAL</text>
+  <path class="l" d="M170 375 V425"/>
+  <text class="s" x="180" y="405">JSON envelopes</text>
+
+  <!-- spark -->
+  <rect class="box" x="365" y="95" width="470" height="250"/>
+  <text class="t" x="385" y="125">Driver (spark-app, client mode)</text>
+  <text class="s" x="385" y="150">readStream kafka, subscribePattern, trigger 5 s</text>
+  <text class="s" x="385" y="170">maxOffsetsPerTrigger 200k, checkpoint volume</text>
+  <rect x="385" y="188" width="430" height="140" rx="10" fill="#eef4fc" stroke="#2a78d6" stroke-width="1.2"/>
+  <text class="t" x="400" y="213" font-size="15">foreachBatch(batch_id)</text>
+  <text class="s" x="400" y="236">1  parse + validate Debezium envelopes</text>
+  <text class="s" x="400" y="256">2  bad records  -&gt;  ops.dead_letter</text>
+  <text class="s" x="400" y="276">3  typed rows  -&gt;  stage.* (JDBC, per partition)</text>
+  <text class="s" x="400" y="296">4  ONE Postgres transaction: SCD2 dims, facts,</text>
+  <text class="s" x="420" y="316">history, aggregate deltas, batch log</text>
+
+  <rect class="box" x="365" y="385" width="470" height="90"/>
+  <text class="t" x="385" y="415">Master</text>
+  <text class="s" x="385" y="438">standalone scheduler, UI :8090</text>
+  <text class="s" x="385" y="458">spark.cores.max 4, shuffle partitions 4</text>
+
+  <rect class="box" x="365" y="505" width="225" height="110"/>
+  <text class="t" x="385" y="535">Worker 1</text>
+  <text class="s" x="385" y="558">executor: 2 cores, 1 GB</text>
+  <text class="s" x="385" y="578">UI :8091</text>
+  <rect class="box" x="610" y="505" width="225" height="110"/>
+  <text class="t" x="630" y="535">Worker 2</text>
+  <text class="s" x="630" y="558">executor: 2 cores, 1 GB</text>
+  <text class="s" x="630" y="578">UI :8092</text>
+
+  <text class="s" x="365" y="650">StreamingQueryListener  -&gt;  ops.streaming_progress</text>
+  <text class="s" x="365" y="672">Prometheus servlet  :4040/metrics/prometheus</text>
+  <text class="s" x="365" y="694">Driver UI :4040 (Structured Streaming tab)</text>
+
+  <path class="l" d="M295 505 H330 V220 H365"/>
+    <path class="l" d="M600 345 V385"/>
+  <path class="l" d="M500 475 V505"/>
+  <path class="l" d="M700 475 V505"/>
+
+  <!-- analytical -->
+  <rect class="box" x="905" y="95" width="450" height="390"/>
+  <text class="t" x="925" y="125">Postgres 16 (analytics)</text>
+  <text class="m" x="925" y="155">stage</text>
+  <text class="s" x="985" y="155">unlogged landing per micro-batch</text>
+  <text class="m" x="925" y="185">core</text>
+  <text class="s" x="985" y="185">dim_customer, dim_product (SCD2)</text>
+  <text class="s" x="985" y="205">dim_date, dim_order_status</text>
+  <text class="s" x="985" y="225">fact_orders, fact_order_items</text>
+  <text class="s" x="985" y="245">fact_order_status_events (history)</text>
+  <text class="m" x="925" y="275">mart</text>
+  <text class="s" x="985" y="275">open_orders_by_delivery_date_status</text>
+  <text class="s" x="985" y="295">pending_items_by_product</text>
+  <text class="s" x="985" y="315">pending_orders_by_customer</text>
+  <text class="s" x="985" y="335">v_top3_*, open_orders_as_of(ts)</text>
+  <text class="m" x="925" y="365">ops</text>
+  <text class="s" x="985" y="365">batch_log, streaming_progress,</text>
+  <text class="s" x="985" y="385">dead_letter, v_freshness</text>
+  <rect x="925" y="410" width="410" height="56" rx="8" fill="#eef4fc"/>
+  <text class="s" x="940" y="433">readers see one consistent snapshot (MVCC):</text>
+  <text class="s" x="940" y="453">marts and facts always move together</text>
+
+  <path class="l" d="M835 260 H905"/>
+  <text class="lab" x="843" y="250">commit</text>
+
+  <rect class="box" x="905" y="525" width="450" height="170"/>
+  <text class="t" x="925" y="555">Serving (FastAPI :8010)</text>
+  <text class="s" x="925" y="580">live dashboard (5 s refresh)</text>
+  <text class="s" x="925" y="600">REST: /api/open-orders, /api/top-delivery-dates,</text>
+  <text class="s" x="925" y="620">/api/pending-items, /api/top-customers,</text>
+  <text class="s" x="925" y="640">/api/history/open-orders, /api/reconcile</text>
+  <text class="s" x="925" y="660">CLI: python -m app.cli &lt;command&gt;</text>
+  <text class="s" x="925" y="680">any SQL client on :5433</text>
+
+  <path class="l" d="M1130 485 V525"/>
+  <path class="l" d="M170 95 V18 H1392 V610 H1355" stroke-dasharray="5 5"/>
+  <text class="s" x="460" y="33">reconciliation reads the OLTP source and diffs it with the marts</text>
+</svg>
