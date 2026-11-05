@@ -1,5 +1,6 @@
 -- Load test: pushes ~1.6M CDC events through Debezium -> Kafka -> Spark.
--- Run against the SOURCE database:
+-- Run against the SOURCE database (optional, the provided generator alone keeps
+-- only a handful of orders open):
 --   docker compose exec -T transactions-db psql -U finance_db_user -d finance_db -f - < scripts/load_test.sql
 -- Orders get delivery dates skewed towards the next days (random()^2 over 30 days) and 4 items each, then a
 -- third of them change status, so every mart and the history table are exercised.
@@ -29,3 +30,14 @@ UPDATE operations.orders
 SET status = (ARRAY['PROCESSING', 'REPROCESSING', 'COMPLETED'])[1 + floor(random() * 3)::int],
     updated_at = clock_timestamp(), updated_by = -2
 WHERE created_by = -2 AND status = 'PENDING' AND random() < 0.4;
+
+-- Deletes are never produced by the generator: remove a small sample of the new orders
+-- (and their items) so the delete path of the pipeline is exercised too.
+WITH victims AS (
+    SELECT order_id FROM operations.orders
+    WHERE created_by = -2 AND random() < 0.01
+)
+, del_items AS (
+    DELETE FROM operations.order_items i USING victims v WHERE i.order_id = v.order_id
+)
+DELETE FROM operations.orders o USING victims v WHERE o.order_id = v.order_id;
