@@ -243,6 +243,8 @@ test numbers and the crash/replay test.
   publish freshness as an SLO.
 * Prometheus + Grafana for the Spark and Postgres metrics, alerting on batch duration above
   the trigger interval for N batches.
+* Make the driver exit when it loses all executors (e.g. after a standalone master restart)
+  so the container restart policy brings it back; today it waits for new executors.
 * Partition `fact_order_status_events` by month and archive cold partitions.
 * Integration test in CI: compose up, run the load script, assert reconciliation passes.
 

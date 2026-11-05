@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Open Orders Analytics</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  @page { size: 1600px 900px; margin: 0; }
+  :root {
+    --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8984;
+    --bg: #ffffff; --panel: #f6f6f4; --line: #e3e2de;
+    --blue: #2a78d6; --blue-soft: #eef4fc; --orange: #eb6834; --green: #1baf7a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #d9d8d4; font: 22px/1.45 Inter, Helvetica, sans-serif; color: var(--ink); }
+  .slide { width: 1600px; height: 900px; background: var(--bg); position: relative; overflow: hidden;
+           padding: 72px 88px; page-break-after: always; margin: 0 auto 24px; display: flex; flex-direction: column; }
+  @media print { body { background: none; } .slide { margin: 0; } }
+  .kicker { font: 600 15px Inter; letter-spacing: .14em; text-transform: uppercase; color: var(--blue); margin-bottom: 14px; }
+  h1 { font-size: 64px; line-height: 1.08; font-weight: 700; letter-spacing: -.02em; }
+  h2 { font-size: 42px; line-height: 1.15; font-weight: 700; letter-spacing: -.015em; margin-bottom: 34px; max-width: 1300px; }
+  h3 { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+  p, li { color: var(--ink-2); }
+  ul { list-style: none; display: grid; gap: 12px; }
+  ul li { padding-left: 22px; position: relative; }
+  ul li::before { content: ""; position: absolute; left: 0; top: 13px; width: 8px; height: 8px; border-radius: 2px; background: var(--blue); }
+  code, .mono { font-family: "JetBrains Mono", monospace; font-size: .86em; }
+  code { background: var(--panel); padding: 1px 6px; border-radius: 5px; color: var(--ink); }
+  .foot { position: absolute; left: 88px; right: 88px; bottom: 34px; display: flex; justify-content: space-between;
+          font-size: 14px; color: var(--ink-3); }
+  .grid { display: grid; gap: 24px; }
+  .g2 { grid-template-columns: 1fr 1fr; } .g3 { grid-template-columns: repeat(3, 1fr); } .g4 { grid-template-columns: repeat(4, 1fr); }
+  .card { background: var(--panel); border-radius: 14px; padding: 26px 28px; }
+  .card p { font-size: 19px; }
+  .card.accent { background: var(--blue-soft); }
+  .big { font: 600 54px/1 "JetBrains Mono", monospace; color: var(--ink); margin: 6px 0 10px; letter-spacing: -.02em; }
+  .label { font-size: 16px; color: var(--ink-3); }
+  table { border-collapse: collapse; width: 100%; font-size: 19px; }
+  th { text-align: left; font-weight: 600; color: var(--ink-2); padding: 10px 14px; border-bottom: 2px solid var(--line); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--line); color: var(--ink-2); vertical-align: top; }
+  td:first-child { color: var(--ink); font-weight: 500; }
+  td.n { font-family: "JetBrains Mono", monospace; text-align: right; color: var(--ink); }
+  img.shot { border: 1px solid var(--line); border-radius: 10px; display: block; }
+  .step { display: grid; grid-template-columns: 54px 1fr; gap: 18px; align-items: start; }
+  .num { width: 44px; height: 44px; border-radius: 12px; background: var(--blue); color: #fff; font: 600 20px Inter;
+         display: flex; align-items: center; justify-content: center; }
+  .formula { font: 500 26px "JetBrains Mono", monospace; background: var(--ink); color: #fff; padding: 22px 28px; border-radius: 12px; }
+  .title-slide { justify-content: center; }
+  .title-slide h1 { font-size: 78px; max-width: 1200px; }
+  .title-slide .sub { font-size: 28px; color: var(--ink-2); margin-top: 26px; max-width: 1100px; }
+  .title-slide .who { margin-top: 64px; font-size: 20px; color: var(--ink-3); }
+  .bar { position: absolute; left: 0; top: 0; width: 14px; height: 100%; background: var(--blue); }
+  .tag { display: inline-block; font: 600 14px Inter; padding: 4px 10px; border-radius: 999px; background: var(--blue-soft); color: var(--blue); margin-right: 8px; }
+</style>
+</head>
+<body>
+
+<!-- 1 -->
+<section class="slide title-slide">
+  <div class="bar"></div>
+  <div class="kicker">Data Engineering take-home &middot; Deel</div>
+  <h1>Open orders, a few seconds after they change</h1>
+  <p class="sub">A Spark Structured Streaming pipeline from Debezium CDC to a dimensional model, with the four logistics metrics maintained incrementally and served live.</p>
+  <p class="who">Leonardo Mariano &middot; November 2026</p>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="kicker">The ask</div>
+  <h2>Logistics leaders need current and historical order state, with low latency</h2>
+  <div class="grid g3">
+    <div class="card"><h3>History + current state</h3><p>Debezium snapshot and change stream land in one model: latest state in the facts, every status transition in a history fact, every customer and product version in SCD2 dimensions.</p></div>
+    <div class="card"><h3>Dimensional model</h3><p>Date, status, customer and product dimensions; order and order-line facts; a transactional status-history fact; one mart table per question.</p></div>
+    <div class="card"><h3>As soon as possible</h3><p>5 s trigger. Measured source-commit to mart-commit latency: <b>7.9 s average, 9.7 s p95</b> in steady state.</p></div>
+  </div>
+  <div class="grid g4" style="margin-top:28px">
+    <div class="card accent"><div class="label">Q1</div><p>Open orders by delivery date and status</p></div>
+    <div class="card accent"><div class="label">Q2</div><p>Top 3 delivery dates with more open orders</p></div>
+    <div class="card accent"><div class="label">Q3</div><p>Open pending items by product</p></div>
+    <div class="card accent"><div class="label">Q4</div><p>Top 3 customers with more pending orders</p></div>
+  </div>
+  <div class="foot"><span>Open = status is not COMPLETED and not deleted. Rule stored in dim_order_status.</span><span>2</span></div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="kicker">Architecture</div>
+  <h2 style="margin-bottom:20px">One streaming query, one transaction per micro-batch</h2>
+  <img class="shot" src="../architecture.png" style="height:680px;width:auto;border:0;align-self:center">
+  <div class="foot"><span>Everything runs with docker compose up; source stack is the one provided</span><span>3</span></div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="kicker">Inside foreachBatch</div>
+  <h2>Spark parses and stages, Postgres applies atomically</h2>
+  <div class="grid g2" style="gap:48px">
+    <div class="grid" style="gap:26px">
+      <div class="step"><div class="num">1</div><div><h3>Parse and validate</h3><p>Debezium envelope per topic. Row image is <code>after</code>, or <code>before</code> for deletes. Bad records go to <code>ops.dead_letter</code> with the raw payload.</p></div></div>
+      <div class="step"><div class="num">2</div><div><h3>Stage</h3><p>Typed rows into unlogged <code>stage.*</code> tables over JDBC, in parallel from the executors. All versions kept.</p></div></div>
+      <div class="step"><div class="num">3</div><div><h3>Apply in one transaction</h3><p>SCD2 dimensions, version-guarded fact upserts, status history, aggregate deltas and the batch log commit together.</p></div></div>
+    </div>
+    <div class="grid" style="gap:20px;align-content:start">
+      <div class="card"><h3>Why a single query over four topics</h3><p>A batch carries every change committed in the interval, across tables. An order and its items move together.</p></div>
+      <div class="card"><h3>Why Spark holds no state</h3><p>The join with history happens against the persisted model. No state store, watermark or stream-stream join; history survives Kafka retention and checkpoint loss.</p></div>
+      <div class="card"><h3>Why one transaction</h3><p>Readers get a consistent MVCC snapshot: an aggregate never disagrees with the facts behind it.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>spark/app/pipeline.py, transform.py, merge_sql.py</span><span>4</span></div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="kicker">Dimensional model</div>
+  <h2>Current state, full history and serving tables in one schema family</h2>
+  <table>
+    <tr><th style="width:360px">Table</th><th style="width:300px">Grain</th><th>Role</th></tr>
+    <tr><td>core.dim_date</td><td>day</td><td>calendar attributes for delivery and order dates</td></tr>
+    <tr><td>core.dim_order_status</td><td>status</td><td>carries the business rule <code>is_open</code></td></tr>
+    <tr><td>core.dim_customer, dim_product</td><td>version (SCD2)</td><td>valid_from / valid_to / is_current; keeps price and address history</td></tr>
+    <tr><td>core.fact_orders</td><td>order, latest state</td><td>accumulating snapshot with date keys</td></tr>
+    <tr><td>core.fact_order_items</td><td>order line, latest state</td><td>source column <code>quanity</code> fixed to <code>quantity</code></td></tr>
+    <tr><td>core.fact_order_status_events</td><td>status transition</td><td>the history; powers <code>open_orders_as_of(ts)</code> and order timelines</td></tr>
+    <tr><td>mart.* (3 tables + views)</td><td>delivery date x status, product, customer</td><td>Q1 to Q4, maintained by deltas; top 3 uses RANK so ties are visible</td></tr>
+    <tr><td>ops.*</td><td>batch, progress event, bad record</td><td>batch log with latency, Spark progress, dead letters, freshness view</td></tr>
+  </table>
+  <div class="foot"><span>analytics-db/init/01_schema.sql</span><span>5</span></div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="kicker">Correctness</div>
+  <h2>Exactly-once results on top of at-least-once delivery</h2>
+  <div class="formula">delta(key) = contribution after the batch &minus; contribution before the batch</div>
+  <div class="grid g3" style="margin-top:30px">
+    <div class="card"><h3>Version guard</h3><p>Fact upserts only win when <code>(source_lsn, kafka_offset)</code> is newer. Replays and late events are no-ops.</p></div>
+    <div class="card"><h3>Deltas from real state</h3><p>Before and after state are read inside the same transaction. A replayed batch changes nothing, so its delta is zero.</p></div>
+    <div class="card"><h3>Unique history</h3><p>One status event per Kafka offset (<code>ON CONFLICT DO NOTHING</code>). SCD2 versions unique per key, LSN and offset.</p></div>
+  </div>
+  <div class="card accent" style="margin-top:24px"><p><b>Proven, not assumed:</b> the driver was killed in the middle of a 900k-event batch. The query restarted from the checkpoint, re-ran the same offsets, and the reconciliation matched the source on the first attempt with zero duplicate history rows.</p></div>
+  <div class="foot"><span>Items that arrive before their order contribute nothing until the order arrives, then the order change pulls them in</span><span>6</span></div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="kicker">Serving</div>
+  <h2 style="margin-bottom:22px">Dashboard, REST API, CLI and SQL read the same marts</h2>
+  <div style="display:grid;grid-template-columns:820px 1fr;gap:40px">
+    <img class="shot" src="../evidence/dashboard.png" style="width:820px;height:600px;object-fit:cover;object-position:top">
+    <div class="grid" style="gap:16px;align-content:start">
+      <div class="card"><h3>Live dashboard</h3><p>Refreshes every 5 s, with a freshness indicator: seconds since the last commit and end-to-end latency.</p></div>
+      <div class="card"><h3>REST API</h3><p class="mono" style="font-size:16px">/api/open-orders<br>/api/top-delivery-dates<br>/api/pending-items<br>/api/top-customers<br>/api/history/open-orders?as_of=<br>/api/reconcile</p></div>
+      <div class="card"><h3>CLI and SQL</h3><p><code>python -m app.cli top-dates</code> and views like <code>mart.v_top3_customers</code></p></div>
+    </div>
+  </div>
+  <div class="foot"><span>FastAPI + psycopg pool, reads only mart and ops schemas</span><span>7</span></div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="kicker">The answers (after the load tests)</div>
+  <h2>600k orders tracked, 500k open, 51M item units pending</h2>
+  <div class="grid g3">
+    <div class="card">
+      <h3>Q2 &middot; top delivery dates</h3>
+      <table><tr><td>2026-11-05</td><td class="n">54,631</td></tr><tr><td>2026-11-06</td><td class="n">26,238</td></tr><tr><td>2026-11-07</td><td class="n">22,188</td></tr></table>
+    </div>
+    <div class="card">
+      <h3>Q4 &middot; top customers</h3>
+      <table><tr><td>HR Company</td><td class="n">50,772</td></tr><tr><td>Best Sellers</td><td class="n">36,016</td></tr><tr><td>Door Company</td><td class="n">30,644</td></tr></table>
+    </div>
+    <div class="card">
+      <h3>Q3 &middot; top pending products</h3>
+      <table><tr><td>Truck</td><td class="n">2,165,806</td></tr><tr><td>Cooker</td><td class="n">2,165,650</td></tr><tr><td>Pencil</td><td class="n">2,151,601</td></tr></table>
+    </div>
+  </div>
+  <div class="card accent" style="margin-top:28px"><p><b>Reconciled against the source.</b> Every key of the three aggregates (90 delivery date x status, 27 products, 18 customers) equals the same metric computed directly on the OLTP database.</p></div>
+  <div class="foot"><span>Volume comes from scripts/load_test.sql on top of the provided generator</span><span>8</span></div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="kicker">Cluster sizing</div>
+  <h2>Size by source parallelism, batch volume and the sink, not by history</h2>
+  <table>
+    <tr><th style="width:300px">Variable</th><th style="width:420px">Observed</th><th>Decision</th></tr>
+    <tr><td>Source parallelism</td><td>4 topics x 1 partition</td><td>4 cores (2 executors x 2), shuffle partitions 4 instead of 200</td></tr>
+    <tr><td>Event rate</td><td>~12 events/s steady, bursts of 1.6M</td><td><code>maxOffsetsPerTrigger = 200k</code> as backpressure</td></tr>
+    <tr><td>Event size</td><td>0.5 to 0.8 KB JSON</td><td>200k events ~150 MB cached: 1 GB executors with headroom</td></tr>
+    <tr><td>Latency target</td><td>seconds</td><td>5 s processing-time trigger</td></tr>
+    <tr><td>State</td><td>none in Spark</td><td>memory does not grow with keys or history</td></tr>
+    <tr><td>Sink</td><td>99% of batch time in addBatch</td><td>scale the sink first; more Spark cores alone would not help</td></tr>
+  </table>
+  <div class="card accent" style="margin-top:24px"><p><b>Production rule of thumb:</b> about 2.3k events/s per core with this sink. For a peak of R events/s plan R / 2300 x 2 cores, and at least as many Kafka partitions as cores, keyed by primary key.</p></div>
+  <div class="foot"><span>Spark standalone: 1 master, 2 workers (2 cores, 1.5 GB), driver in client mode</span><span>9</span></div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="kicker">Spark metrics</div>
+  <h2 style="margin-bottom:24px">What the metrics said, and what they point to</h2>
+  <div style="display:grid;grid-template-columns:1fr 560px;gap:40px">
+    <div class="grid" style="gap:18px;align-content:start">
+      <div class="grid g2" style="gap:18px">
+        <div class="card"><div class="label">processedRowsPerSecond</div><div class="big">9.3k</div><p>average under load, 12.4k max</p></div>
+        <div class="card"><div class="label">addBatch / triggerExecution</div><div class="big">99%</div><p>time is in the sink, not in Kafka reads</p></div>
+        <div class="card"><div class="label">stage vs merge (200k batch)</div><div class="big">14 / 8 s</div><p>JDBC staging is the first target</p></div>
+        <div class="card"><div class="label">e2e latency, steady</div><div class="big">7.9 s</div><p>p95 9.7 s; 1.6M burst drained in ~3 min</p></div>
+      </div>
+      <p style="font-size:18px">Collected by a <code>StreamingQueryListener</code> into <code>ops.streaming_progress</code>, by the job into <code>ops.batch_log</code>, and exposed on <code>:4040/metrics/prometheus</code>.</p>
+    </div>
+    <img class="shot" src="../evidence/spark-ui-streaming-statistics.png" style="width:560px;height:620px;object-fit:cover;object-position:top left">
+  </div>
+  <div class="foot"><span>3.4M CDC events processed across three load runs, zero dead letters</span><span>10</span></div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="kicker">Findings in the source</div>
+  <h2>Four things the data told me</h2>
+  <div class="grid g2">
+    <div class="card"><h3>Orders without items</h3><p>The generator attaches items to the customer's <i>first</i> order of the day (<code>LIMIT 1</code>, no status filter). Orders created later, the ones that stay open, have no items, so Q3 is correct but nearly empty. Reconciliation confirms the source shows the same.</p></div>
+    <div class="card"><h3>Orders that never close</h3><p>Orders from previous days are never updated again, so they stay open forever. In production this is a stale-order alert.</p></div>
+    <div class="card"><h3>Unconstrained NUMERIC</h3><p><code>unity_price</code> would arrive as a base64 struct. The connector now emits decimals as strings: lossless and simple to cast.</p></div>
+    <div class="card"><h3>Schema drift from the ERD</h3><p><code>order_items.quanity</code> in the DDL versus <code>quantity</code> in the diagram. Mapped explicitly and fixed in the model.</p></div>
+  </div>
+  <div class="foot"><span>Documented in the README with the queries used</span><span>11</span></div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="kicker">Next steps</div>
+  <h2>What I would do with more time</h2>
+  <div class="grid g2" style="gap:20px 48px">
+    <ul>
+      <li><b>Faster sink:</b> <code>COPY</code> instead of JDBC inserts, one Spark pass for batch statistics</li>
+      <li><b>Contracts:</b> Avro + Schema Registry, compatibility checks in CI</li>
+      <li><b>Repair without restarts:</b> Debezium incremental snapshots via a signal table</li>
+      <li><b>Lakehouse for scale:</b> history and facts in Delta or Iceberg with MERGE; Postgres keeps only the small marts</li>
+    </ul>
+    <ul>
+      <li><b>Observability:</b> Prometheus + Grafana, alert when batch duration exceeds the trigger for N batches</li>
+      <li><b>Data quality:</b> alerts on dead letters, orders without items and reconciliation drift; freshness as an SLO</li>
+      <li><b>Operations:</b> Kubernetes, checkpoint on object storage, driver auto-restart if executors are lost</li>
+      <li><b>CI:</b> compose up, load script, assert reconciliation</li>
+    </ul>
+  </div>
+  <div class="foot"><span>Repository: README, docs/evidence, scripts/load_test.sql</span><span>12</span></div>
+</section>
+
+</body>
+</html>
