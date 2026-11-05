@@ -39,7 +39,7 @@
   <text class="m" x="65" y="358">decimal=string</text>
 
   <rect class="box" x="45" y="425" width="250" height="160"/>
-  <text class="t" x="65" y="455">Kafka 7.5</text>
+  <text class="t" x="65" y="455">Kafka (Confluent 7.5)</text>
   <text class="m" x="65" y="480">finance_db.operations.</text>
   <text class="m" x="80" y="500">customers</text>
   <text class="m" x="80" y="518">products</text>
@@ -55,12 +55,12 @@
   <rect class="box" x="365" y="95" width="470" height="250"/>
   <text class="t" x="385" y="125">Driver (spark-app, client mode)</text>
   <text class="s" x="385" y="150">readStream kafka, subscribePattern, trigger 5 s</text>
-  <text class="s" x="385" y="170">maxOffsetsPerTrigger 200k, checkpoint volume</text>
+  <text class="s" x="385" y="170">maxOffsetsPerTrigger 200k, minPartitions 8, checkpoint</text>
   <rect x="385" y="188" width="430" height="140" rx="10" fill="#eef4fc" stroke="#2a78d6" stroke-width="1.2"/>
   <text class="t" x="400" y="213" font-size="15">foreachBatch(batch_id)</text>
   <text class="s" x="400" y="236">1  parse + validate Debezium envelopes</text>
   <text class="s" x="400" y="256">2  bad records  -&gt;  ops.dead_letter</text>
-  <text class="s" x="400" y="276">3  typed rows  -&gt;  stage.* (JDBC, per partition)</text>
+  <text class="s" x="400" y="276">3  typed rows  -&gt;  stage.* (JDBC, 4 tables concurrently)</text>
   <text class="s" x="400" y="296">4  ONE Postgres transaction: SCD2 dims, facts,</text>
   <text class="s" x="420" y="316">history, aggregate deltas, batch log</text>
 

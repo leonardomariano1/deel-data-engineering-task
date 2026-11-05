@@ -69,9 +69,9 @@
   <div class="kicker">The ask</div>
   <h2>Logistics leaders need current and historical order state, with low latency</h2>
   <div class="grid g3">
-    <div class="card"><h3>History + current state</h3><p>Debezium snapshot and change stream land in one model: latest state in the facts, every status transition in a history fact, every customer and product version in SCD2 dimensions.</p></div>
-    <div class="card"><h3>Dimensional model</h3><p>Date, status, customer and product dimensions; order and order-line facts; a transactional status-history fact; one mart table per question.</p></div>
-    <div class="card"><h3>As soon as possible</h3><p>5 s trigger. Measured source-commit to mart-commit latency: <b>7.9 s average, 9.7 s p95</b> in steady state.</p></div>
+    <div class="card"><h3>History + current state</h3><p>Debezium snapshot and change stream land in one model: latest state in the facts, every status, delivery date or customer change in a history fact, every customer and product version in SCD2 dimensions.</p></div>
+    <div class="card"><h3>Dimensional model</h3><p>Date, status, customer and product dimensions; order and order-line facts; a transactional change-history fact; one mart table per question.</p></div>
+    <div class="card"><h3>As soon as possible</h3><p>5 s trigger. Measured source-commit to mart-commit latency in steady state: <b>6.9 s average, 7.5 s p95</b> (8.0 s p95 for the oldest event of a batch).</p></div>
   </div>
   <div class="grid g4" style="margin-top:28px">
     <div class="card accent"><div class="label">Q1</div><p>Open orders by delivery date and status</p></div>
@@ -97,11 +97,11 @@
   <div class="grid g2" style="gap:48px">
     <div class="grid" style="gap:26px">
       <div class="step"><div class="num">1</div><div><h3>Parse and validate</h3><p>Debezium envelope per topic. Row image is <code>after</code>, or <code>before</code> for deletes. Bad records go to <code>ops.dead_letter</code> with the raw payload.</p></div></div>
-      <div class="step"><div class="num">2</div><div><h3>Stage</h3><p>Typed rows into unlogged <code>stage.*</code> tables over JDBC, in parallel from the executors. All versions kept.</p></div></div>
+      <div class="step"><div class="num">2</div><div><h3>Stage</h3><p>Typed rows into unlogged <code>stage.*</code> tables over JDBC. The four tables are staged concurrently and Kafka ranges are split into 8 tasks. All versions kept.</p></div></div>
       <div class="step"><div class="num">3</div><div><h3>Apply in one transaction</h3><p>SCD2 dimensions, version-guarded fact upserts, status history, aggregate deltas and the batch log commit together.</p></div></div>
     </div>
     <div class="grid" style="gap:20px;align-content:start">
-      <div class="card"><h3>Why a single query over four topics</h3><p>A batch carries every change committed in the interval, across tables. An order and its items move together.</p></div>
+      <div class="card"><h3>Why a single query over four topics</h3><p>One checkpoint and one transaction for all tables. An order and its items may still land in different batches; the merge handles either order of arrival.</p></div>
       <div class="card"><h3>Why Spark holds no state</h3><p>The join with history happens against the persisted model. No state store, watermark or stream-stream join; history survives Kafka retention and checkpoint loss.</p></div>
       <div class="card"><h3>Why one transaction</h3><p>Readers get a consistent MVCC snapshot: an aggregate never disagrees with the facts behind it.</p></div>
     </div>
@@ -120,7 +120,7 @@
     <tr><td>core.dim_customer, dim_product</td><td>version (SCD2)</td><td>valid_from / valid_to / is_current; keeps price and address history</td></tr>
     <tr><td>core.fact_orders</td><td>order, latest state</td><td>accumulating snapshot with date keys</td></tr>
     <tr><td>core.fact_order_items</td><td>order line, latest state</td><td>source column <code>quanity</code> fixed to <code>quantity</code></td></tr>
-    <tr><td>core.fact_order_status_events</td><td>status transition</td><td>the history; powers <code>open_orders_as_of(ts)</code> and order timelines</td></tr>
+    <tr><td>core.fact_order_status_events</td><td>order change</td><td>the history; powers <code>open_orders_as_of(ts)</code> and order timelines</td></tr>
     <tr><td>mart.* (3 tables + views)</td><td>delivery date x status, product, customer</td><td>Q1 to Q4, maintained by deltas; top 3 uses RANK so ties are visible</td></tr>
     <tr><td>ops.*</td><td>batch, progress event, bad record</td><td>batch log with latency, Spark progress, dead letters, freshness view</td></tr>
   </table>
@@ -135,9 +135,9 @@
   <div class="grid g3" style="margin-top:30px">
     <div class="card"><h3>Version guard</h3><p>Fact upserts only win when <code>(source_lsn, kafka_offset)</code> is newer. Replays and late events are no-ops.</p></div>
     <div class="card"><h3>Deltas from real state</h3><p>Before and after state are read inside the same transaction. A replayed batch changes nothing, so its delta is zero.</p></div>
-    <div class="card"><h3>Unique history</h3><p>One status event per Kafka offset (<code>ON CONFLICT DO NOTHING</code>). SCD2 versions unique per key, LSN and offset.</p></div>
+    <div class="card"><h3>Unique history</h3><p>One history row per source change <code>(order_id, LSN)</code>. SCD2 only versions real attribute changes newer than the stored one.</p></div>
   </div>
-  <div class="card accent" style="margin-top:24px"><p><b>Proven, not assumed:</b> the driver was killed in the middle of a 900k-event batch. The query restarted from the checkpoint, re-ran the same offsets, and the reconciliation matched the source on the first attempt with zero duplicate history rows.</p></div>
+  <div class="card accent" style="margin-top:24px"><p><b>Proven, not assumed:</b> a 188k-event batch already committed in Postgres was forced to run again (driver killed, its checkpoint commit removed). Debezium also re-published ~719k events after a crash. In both cases the reconciliation matched the source exactly, with zero duplicate history rows. Merge tests assert the same on a throwaway database.</p></div>
   <div class="foot"><span>Items that arrive before their order contribute nothing until the order arrives, then the order change pulls them in</span><span>6</span></div>
 </section>
 
@@ -158,24 +158,24 @@
 
 <!-- 8 -->
 <section class="slide">
-  <div class="kicker">The answers (after the load tests)</div>
-  <h2>600k orders tracked, 500k open, 51M item units pending</h2>
+  <div class="kicker">The answers, load-test data (02:14 UTC, same moment as the dashboard)</div>
+  <h2>500k orders tracked, 428k open, 43.7M item units pending</h2>
   <div class="grid g3">
     <div class="card">
       <h3>Q2 &middot; top delivery dates</h3>
-      <table><tr><td>2026-11-05</td><td class="n">54,631</td></tr><tr><td>2026-11-06</td><td class="n">26,238</td></tr><tr><td>2026-11-07</td><td class="n">22,188</td></tr></table>
+      <table><tr><td>2026-11-05</td><td class="n">78,092</td></tr><tr><td>2026-11-06</td><td class="n">32,108</td></tr><tr><td>2026-11-07</td><td class="n">24,784</td></tr></table>
     </div>
     <div class="card">
       <h3>Q4 &middot; top customers</h3>
-      <table><tr><td>HR Company</td><td class="n">50,772</td></tr><tr><td>Best Sellers</td><td class="n">36,016</td></tr><tr><td>Door Company</td><td class="n">30,644</td></tr></table>
+      <table><tr><td>Amazing Partner LLC</td><td class="n">69,385</td></tr><tr><td>Very Good Company</td><td class="n">39,563</td></tr><tr><td>Sky Company</td><td class="n">36,830</td></tr></table>
     </div>
     <div class="card">
       <h3>Q3 &middot; top pending products</h3>
-      <table><tr><td>Truck</td><td class="n">2,165,806</td></tr><tr><td>Cooker</td><td class="n">2,165,650</td></tr><tr><td>Pencil</td><td class="n">2,151,601</td></tr></table>
+      <table><tr><td>Fridge</td><td class="n">2,140,920</td></tr><tr><td>Desk</td><td class="n">2,129,077</td></tr><tr><td>Pants</td><td class="n">2,107,764</td></tr></table>
     </div>
   </div>
-  <div class="card accent" style="margin-top:28px"><p><b>Reconciled against the source.</b> Every key of the three aggregates (90 delivery date x status, 27 products, 18 customers) equals the same metric computed directly on the OLTP database.</p></div>
-  <div class="foot"><span>Volume comes from scripts/load_test.sql on top of the provided generator</span><span>8</span></div>
+  <div class="card accent" style="margin-top:28px"><p><b>Reconciled against the source.</b> Every key of the three aggregates (90 delivery date x status, 28 products, 18 customers) equals the same metric computed directly on the OLTP database. With the generator alone only ~20 orders stay open and they have no items (slide 11).</p></div>
+  <div class="foot"><span>Volume comes from scripts/load_test.sql (300k + 100k orders) on top of the provided generator</span><span>8</span></div>
 </section>
 
 <!-- 9 -->
@@ -184,14 +184,15 @@
   <h2>Size by source parallelism, batch volume and the sink, not by history</h2>
   <table>
     <tr><th style="width:300px">Variable</th><th style="width:420px">Observed</th><th>Decision</th></tr>
-    <tr><td>Source parallelism</td><td>4 topics x 1 partition</td><td>4 cores (2 executors x 2), shuffle partitions 4 instead of 200</td></tr>
-    <tr><td>Event rate</td><td>~12 events/s steady, bursts of 1.6M</td><td><code>maxOffsetsPerTrigger = 200k</code> as backpressure</td></tr>
+    <tr><td>Source parallelism</td><td>4 topics x 1 partition</td><td>4 cores (2 executors x 2); tables staged concurrently and minPartitions 8 so no core idles; shuffle partitions 4 instead of 200</td></tr>
+    <tr><td>Event rate</td><td>3.6 events/s steady, bursts of 1.6M</td><td><code>maxOffsetsPerTrigger = 200k</code> as backpressure</td></tr>
     <tr><td>Event size</td><td>0.5 to 0.8 KB JSON</td><td>200k events ~150 MB cached: 1 GB executors with headroom</td></tr>
     <tr><td>Latency target</td><td>seconds</td><td>5 s processing-time trigger</td></tr>
     <tr><td>State</td><td>none in Spark</td><td>memory does not grow with keys or history</td></tr>
-    <tr><td>Sink</td><td>99% of batch time in addBatch</td><td>scale the sink first; more Spark cores alone would not help</td></tr>
+    <tr><td>Sink</td><td>98% of trigger time in addBatch</td><td>merge is now the larger half; scale the sink first</td></tr>
+    <tr><td>Stack memory</td><td>8 GB Docker VM</td><td>JVM heaps capped after Kafka Connect was OOM-killed under load</td></tr>
   </table>
-  <div class="card accent" style="margin-top:24px"><p><b>Production rule of thumb:</b> about 2.3k events/s per core with this sink. For a peak of R events/s plan R / 2300 x 2 cores, and at least as many Kafka partitions as cores, keyed by primary key.</p></div>
+  <div class="card accent" style="margin-top:24px"><p><b>Production rule of thumb:</b> about 4.5k events/s per core with this sink. For a peak of R events/s plan R / 4500 x 2 cores, and at least as many Kafka partitions as cores, keyed by primary key.</p></div>
   <div class="foot"><span>Spark standalone: 1 master, 2 workers (2 cores, 1.5 GB), driver in client mode</span><span>9</span></div>
 </section>
 
@@ -202,38 +203,51 @@
   <div style="display:grid;grid-template-columns:1fr 560px;gap:40px">
     <div class="grid" style="gap:18px;align-content:start">
       <div class="grid g2" style="gap:18px">
-        <div class="card"><div class="label">processedRowsPerSecond</div><div class="big">9.3k</div><p>average under load, 12.4k max</p></div>
-        <div class="card"><div class="label">addBatch / triggerExecution</div><div class="big">99%</div><p>time is in the sink, not in Kafka reads</p></div>
-        <div class="card"><div class="label">stage vs merge (200k batch)</div><div class="big">14 / 8 s</div><p>JDBC staging is the first target</p></div>
-        <div class="card"><div class="label">e2e latency, steady</div><div class="big">7.9 s</div><p>p95 9.7 s; 1.6M burst drained in ~3 min</p></div>
+        <div class="card"><div class="label">processedRowsPerSecond</div><div class="big">18.3k</div><p>avg on 200k batches (24.3k max), was 9.3k</p></div>
+        <div class="card"><div class="label">addBatch / triggerExecution</div><div class="big">98%</div><p>time is in foreachBatch, not in Kafka reads</p></div>
+        <div class="card"><div class="label">stage vs merge (200k batch)</div><div class="big">4.3 / 5.2 s</div><p>staging was 14.3 s on one core; fixed with concurrency</p></div>
+        <div class="card"><div class="label">e2e latency, steady</div><div class="big">6.9 s</div><p>p95 7.5 s; 1.6M burst drained in ~2 min</p></div>
       </div>
       <p style="font-size:18px">Collected by a <code>StreamingQueryListener</code> into <code>ops.streaming_progress</code>, by the job into <code>ops.batch_log</code>, and exposed on <code>:4040/metrics/prometheus</code>.</p>
     </div>
     <img class="shot" src="../evidence/spark-ui-streaming-statistics.png" style="width:560px;height:620px;object-fit:cover;object-position:top left">
   </div>
-  <div class="foot"><span>3.4M CDC events processed across three load runs, zero dead letters</span><span>10</span></div>
+  <div class="foot"><span>Clean run from a fresh clone: 3.57M Kafka records consumed, zero dead letters</span><span>10</span></div>
 </section>
 
 <!-- 11 -->
 <section class="slide">
+  <div class="kicker">The path</div>
+  <h2>What testing broke, and what changed</h2>
+  <div class="grid g2">
+    <div class="card"><h3>Staging used one core of four</h3><p>Metrics showed 14.3 s of staging per 200k batch: four single-partition topics staged one after the other. Concurrent tables plus <code>minPartitions</code>: 4.3 s.</p></div>
+    <div class="card"><h3>Kafka Connect OOM-killed under load</h3><p>Default heap up to 2 GB on an 8 GB VM; CDC stopped silently. Heaps capped. On restart Debezium re-sent ~719k events; the version guards absorbed them.</p></div>
+    <div class="card"><h3>The first crash test proved less than claimed</h3><p>Killing the driver mid-batch only tested a rollback. Added merge tests on a real Postgres and a forced replay of a batch that was already committed.</p></div>
+    <div class="card"><h3>State that did not survive a restart</h3><p>Kafka had no volume and history was keyed by Kafka offset. Named volumes for Kafka and ZooKeeper; history keyed by <code>(order_id, LSN)</code>.</p></div>
+  </div>
+  <div class="foot"><span>Each item is a commit in the repository history</span><span>11</span></div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
   <div class="kicker">Findings in the source</div>
   <h2>Four things the data told me</h2>
   <div class="grid g2">
-    <div class="card"><h3>Orders without items</h3><p>The generator attaches items to the customer's <i>first</i> order of the day (<code>LIMIT 1</code>, no status filter). Orders created later, the ones that stay open, have no items, so Q3 is correct but nearly empty. Reconciliation confirms the source shows the same.</p></div>
+    <div class="card"><h3>Orders without items</h3><p>The generator attaches items to the customer's <i>first</i> order of the day (<code>LIMIT 1</code>, no status filter). Orders created later, the ones that stay open, have no items, so with the generator alone Q3 is correct but nearly empty. Reconciliation confirms the source shows the same.</p></div>
     <div class="card"><h3>Orders that never close</h3><p>Orders from previous days are never updated again, so they stay open forever. In production this is a stale-order alert.</p></div>
     <div class="card"><h3>Unconstrained NUMERIC</h3><p><code>unity_price</code> would arrive as a base64 struct. The connector now emits decimals as strings: lossless and simple to cast.</p></div>
     <div class="card"><h3>Schema drift from the ERD</h3><p><code>order_items.quanity</code> in the DDL versus <code>quantity</code> in the diagram. Mapped explicitly and fixed in the model.</p></div>
   </div>
-  <div class="foot"><span>Documented in the README with the queries used</span><span>11</span></div>
+  <div class="foot"><span>Documented in the README with the queries used</span><span>12</span></div>
 </section>
 
-<!-- 12 -->
+<!-- 13 -->
 <section class="slide">
   <div class="kicker">Next steps</div>
   <h2>What I would do with more time</h2>
   <div class="grid g2" style="gap:20px 48px">
     <ul>
-      <li><b>Faster sink:</b> <code>COPY</code> instead of JDBC inserts, one Spark pass for batch statistics</li>
+      <li><b>Faster sink:</b> <code>COPY</code> instead of JDBC inserts, partitioned facts so the merge touches smaller indexes</li>
       <li><b>Contracts:</b> Avro + Schema Registry, compatibility checks in CI</li>
       <li><b>Repair without restarts:</b> Debezium incremental snapshots via a signal table</li>
       <li><b>Lakehouse for scale:</b> history and facts in Delta or Iceberg with MERGE; Postgres keeps only the small marts</li>
@@ -241,11 +255,11 @@
     <ul>
       <li><b>Observability:</b> Prometheus + Grafana, alert when batch duration exceeds the trigger for N batches</li>
       <li><b>Data quality:</b> alerts on dead letters, orders without items and reconciliation drift; freshness as an SLO</li>
-      <li><b>Operations:</b> Kubernetes, checkpoint on object storage, driver auto-restart if executors are lost</li>
+      <li><b>Operations:</b> Kubernetes, checkpoint on object storage, resource limits per service, driver exits when executors are lost</li>
       <li><b>CI:</b> compose up, load script, assert reconciliation</li>
     </ul>
   </div>
-  <div class="foot"><span>Repository: README, docs/evidence, scripts/load_test.sql</span><span>12</span></div>
+  <div class="foot"><span>Repository: README, docs/evidence, scripts/load_test.sql</span><span>13</span></div>
 </section>
 
 </body>
