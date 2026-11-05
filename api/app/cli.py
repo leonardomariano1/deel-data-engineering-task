@@ -1,7 +1,7 @@
 """CLI over the same queries as the API.
 
     docker compose exec api python -m app.cli open-orders [--date 2026-11-15] [--status PENDING]
-    docker compose exec api python -m app.cli top-dates | pending-items | top-customers
+    docker compose exec api python -m app.cli top-dates | pending-items | top-customers [--pending-status]
     docker compose exec api python -m app.cli as-of 2026-11-05T01:00:00
     docker compose exec api python -m app.cli timeline 42
     docker compose exec api python -m app.cli freshness | batches | reconcile
@@ -31,8 +31,10 @@ def main():
     oo = sub.add_parser("open-orders")
     oo.add_argument("--date")
     oo.add_argument("--status")
-    for name in ("top-dates", "pending-items", "top-customers", "freshness", "batches", "reconcile"):
+    for name in ("top-dates", "pending-items", "freshness", "batches", "reconcile"):
         sub.add_parser(name)
+    sub.add_parser("top-customers").add_argument("--pending-status", action="store_true",
+                                                 help="rank by the literal PENDING status instead of open orders")
     sub.add_parser("as-of").add_argument("ts")
     sub.add_parser("timeline").add_argument("order_id", type=int)
     a = p.parse_args()
@@ -44,7 +46,7 @@ def main():
     elif a.cmd == "pending-items":
         table(db.fetch(queries.PENDING_ITEMS))
     elif a.cmd == "top-customers":
-        table(db.fetch(queries.TOP_CUSTOMERS))
+        table(db.fetch(queries.TOP_CUSTOMERS_PENDING_STATUS if a.pending_status else queries.TOP_CUSTOMERS))
     elif a.cmd == "as-of":
         table(db.fetch(queries.OPEN_ORDERS_AS_OF, {"as_of": a.ts}))
     elif a.cmd == "timeline":

@@ -21,6 +21,11 @@ SELECT customer_id, customer_name, open_orders, orders_status_pending, rnk
 FROM mart.v_top3_customers ORDER BY rnk, customer_id
 """
 
+TOP_CUSTOMERS_PENDING_STATUS = """
+SELECT customer_id, customer_name, orders_status_pending, open_orders, rnk
+FROM mart.v_top3_customers_pending_status ORDER BY rnk, customer_id
+"""
+
 OPEN_ORDERS_AS_OF = "SELECT * FROM mart.open_orders_as_of(%(as_of)s::timestamp) ORDER BY 1, 2"
 
 ORDER_TIMELINE = """

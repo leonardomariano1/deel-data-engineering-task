@@ -33,8 +33,9 @@ def pending_items():
 
 
 @app.get("/api/top-customers", summary="Q4 - top 3 customers with more pending orders (ties kept)")
-def top_customers():
-    return db.fetch(queries.TOP_CUSTOMERS)
+def top_customers(by: str = Query("open", pattern="^(open|pending_status)$",
+                                  description="open = not COMPLETED (default); pending_status = literal PENDING status")):
+    return db.fetch(queries.TOP_CUSTOMERS if by == "open" else queries.TOP_CUSTOMERS_PENDING_STATUS)
 
 
 @app.get("/api/history/open-orders", summary="Open orders by delivery date and status as of a past timestamp (UTC)")
