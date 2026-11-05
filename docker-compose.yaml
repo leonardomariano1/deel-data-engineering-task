@@ -64,5 +64,92 @@ services:
     entrypoint: ["/bin/sh", "/init-connectors.sh"]
     restart: "no"
 
+  # ---------------------------------------------------------------------------
+  # Analytical platform
+  # ---------------------------------------------------------------------------
+  analytics-db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=analytics
+      - POSTGRES_PASSWORD=analytics
+      - POSTGRES_DB=analytics
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "work_mem=32MB",
+              "-c", "max_connections=100", "-c", "synchronous_commit=on"]
+    volumes:
+      - analytics-data:/var/lib/postgresql/data
+      - ./analytics-db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analytics -d analytics"]
+      interval: 5s
+      retries: 20
+
+  spark-master:
+    build: ./spark
+    image: acme/spark:3.5.1
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master",
+              "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+
+  spark-worker-1: &worker
+    image: acme/spark:3.5.1
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=1536m
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker",
+              "--webui-port", "8081", "spark://spark-master:7077"]
+    ports:
+      - "8081:8081"
+
+  spark-worker-2:
+    <<: *worker
+    ports:
+      - "8082:8081"
+
+  spark-app:
+    image: acme/spark:3.5.1
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+      spark-master:
+        condition: service_started
+      spark-worker-1:
+        condition: service_started
+      spark-worker-2:
+        condition: service_started
+      kafka:
+        condition: service_started
+    hostname: spark-app
+    environment:
+      - KAFKA_BOOTSTRAP=kafka:29092
+      - TRIGGER_INTERVAL=5 seconds
+      - MAX_OFFSETS_PER_TRIGGER=200000
+      - CHECKPOINT_LOCATION=/checkpoints/orders_cdc
+      - ANALYTICS_DB_HOST=analytics-db
+    command: ["/opt/app/submit.sh"]
+    volumes:
+      - spark-checkpoints:/checkpoints
+    ports:
+      - "4040:4040"
+    restart: on-failure
+
+  api:
+    build: ./api
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+    environment:
+      - ANALYTICS_DSN=postgresql://analytics:analytics@analytics-db:5432/analytics
+      - SOURCE_DSN=postgresql://finance_db_user:1234@transactions-db:5432/finance_db
+    ports:
+      - "8000:8000"
+
 volumes:
   pg-data:
+  analytics-data:
+  spark-checkpoints:
