@@ -89,6 +89,8 @@ def to_stage(parsed: DataFrame, table: str) -> DataFrame:
             F.col("row.customer_id").alias("customer_id"),
             F.col("row.status").alias("status"),
             F.col("env.before.status").alias("before_status"),
+            _days_to_date(F.col("env.before.delivery_date")).alias("before_delivery_date"),
+            F.col("env.before.customer_id").alias("before_customer_id"),
         ]
     elif table == "order_items":
         cols = [

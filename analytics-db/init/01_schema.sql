@@ -55,6 +55,8 @@ CREATE UNLOGGED TABLE stage.orders_cdc (
     customer_id      BIGINT,
     status           TEXT,
     before_status    TEXT,
+    before_delivery_date DATE,
+    before_customer_id   BIGINT,
     created_at       TIMESTAMP,
     updated_at       TIMESTAMP,
     op               TEXT NOT NULL,
@@ -199,7 +201,8 @@ CREATE TABLE core.fact_order_items (
 CREATE INDEX fact_order_items_order_ix ON core.fact_order_items (order_id);
 CREATE INDEX fact_order_items_product_ix ON core.fact_order_items (product_id);
 
--- Transactional fact: every status transition ever observed (the history).
+-- Transactional fact: every change that matters for the metrics (status, delivery date,
+-- customer), plus creations and deletions. This is the history.
 CREATE TABLE core.fact_order_status_events (
     event_id           BIGSERIAL PRIMARY KEY,
     order_id           BIGINT NOT NULL,
@@ -208,12 +211,14 @@ CREATE TABLE core.fact_order_status_events (
     previous_status    TEXT,
     status             TEXT,
     event_type         TEXT NOT NULL,        -- snapshot | insert | update | delete
-    event_ts           TIMESTAMP NOT NULL,   -- business time (updated_at in source)
+    event_ts           TIMESTAMP NOT NULL,   -- updated_at in source; commit time for deletes
     source_lsn         BIGINT NOT NULL,
     kafka_partition    INT NOT NULL,
     kafka_offset       BIGINT NOT NULL,
     loaded_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (kafka_partition, kafka_offset)
+    -- one row per source change: the WAL position, not the Kafka offset, identifies it
+    -- (offsets restart if the Kafka cluster is recreated, LSNs never repeat)
+    UNIQUE (order_id, source_lsn)
 );
 CREATE INDEX fact_order_status_events_order_ix ON core.fact_order_status_events (order_id, event_ts);
 CREATE INDEX fact_order_status_events_ts_ix ON core.fact_order_status_events (event_ts);
@@ -285,6 +290,18 @@ FROM (
 ) t
 WHERE rnk <= 3;
 
+-- Q4 variant if "pending" means the literal PENDING status
+CREATE VIEW mart.v_top3_customers_pending_status AS
+SELECT customer_id, customer_name, orders_status_pending, open_orders, rnk
+FROM (
+    SELECT a.customer_id, c.customer_name, a.orders_status_pending, a.open_orders,
+           RANK() OVER (ORDER BY a.orders_status_pending DESC) AS rnk
+    FROM mart.pending_orders_by_customer a
+    LEFT JOIN core.dim_customer c ON c.customer_id = a.customer_id AND c.is_current
+    WHERE a.orders_status_pending > 0
+) t
+WHERE rnk <= 3;
+
 -- Historical question: what was open at any point in time (replayed from the event fact)
 CREATE FUNCTION mart.open_orders_as_of(p_ts TIMESTAMP)
 RETURNS TABLE (delivery_date DATE, status TEXT, open_orders BIGINT)
@@ -318,7 +335,8 @@ CREATE TABLE ops.batch_log (
     max_source_ts      TIMESTAMP,
     stage_ms           BIGINT NOT NULL,      -- Spark parse + JDBC write
     merge_ms           BIGINT NOT NULL,      -- Postgres transactional merge
-    e2e_latency_ms     BIGINT                -- committed_at - max_source_ts
+    e2e_latency_ms     BIGINT,               -- committed_at - max_source_ts (newest event)
+    e2e_latency_max_ms BIGINT                -- committed_at - min_source_ts (oldest event)
 );
 
 CREATE TABLE ops.streaming_progress (
@@ -354,5 +372,7 @@ SELECT MAX(committed_at)                                       AS last_commit_at
        MAX(max_source_ts)                                      AS last_source_event_ts,
        EXTRACT(EPOCH FROM (now() - MAX(committed_at)))::INT    AS seconds_since_last_commit,
        (SELECT e2e_latency_ms FROM ops.batch_log
-         WHERE input_rows > 0 ORDER BY batch_id DESC LIMIT 1)  AS last_e2e_latency_ms
+         WHERE input_rows > 0 ORDER BY batch_id DESC LIMIT 1)  AS last_e2e_latency_ms,
+       (SELECT e2e_latency_max_ms FROM ops.batch_log
+         WHERE input_rows > 0 ORDER BY batch_id DESC LIMIT 1)  AS last_e2e_latency_max_ms
 FROM ops.batch_log;

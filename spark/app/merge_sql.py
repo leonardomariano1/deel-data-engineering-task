@@ -40,12 +40,33 @@ CREATE TEMP TABLE t_old_items ON COMMIT DROP AS
 # 2. SCD2 dimensions ---------------------------------------------------------------------
 def scd2_sql(dim: str, stage: str, key: str, attrs: list[str]) -> str:
     cols = ", ".join(attrs)
+    fingerprint = "md5(concat_ws('|', " + ", ".join(f"{a}::text" for a in attrs) + ", is_deleted::text))"
     return f"""
+-- New version only when a tracked attribute (or the deleted flag) actually changed, and only
+-- for events newer than the latest version already stored (replays and stale events skip).
 INSERT INTO {dim} ({key}, {cols}, valid_from, is_deleted, source_lsn, kafka_offset)
-SELECT {key}, {cols},
-       CASE WHEN is_deleted THEN source_ts ELSE COALESCE(updated_at, source_ts) END,
-       is_deleted, source_lsn, kafka_offset
-FROM {stage}
+SELECT {key}, {cols}, valid_from, is_deleted, source_lsn, kafka_offset
+FROM (
+    SELECT u.*,
+           LAG(fp) OVER (PARTITION BY {key} ORDER BY pos) AS prev_fp,
+           MAX(CASE WHEN NOT is_new THEN pos END) OVER (PARTITION BY {key}) AS stored_pos
+    FROM (
+        SELECT {key}, {cols}, is_deleted, source_lsn, kafka_offset,
+               CASE WHEN is_deleted THEN source_ts ELSE COALESCE(updated_at, source_ts) END AS valid_from,
+               {fingerprint} AS fp,
+               source_lsn::numeric * 1e12 + kafka_offset AS pos,
+               TRUE AS is_new
+        FROM {stage}
+        UNION ALL
+        SELECT {key}, {cols}, is_deleted, source_lsn, kafka_offset, valid_from,
+               {fingerprint}, source_lsn::numeric * 1e12 + kafka_offset, FALSE
+        FROM {dim}
+        WHERE valid_to IS NULL AND {key} IN (SELECT {key} FROM {stage})
+    ) u
+) x
+WHERE is_new
+  AND (stored_pos IS NULL OR pos > stored_pos)
+  AND prev_fp IS DISTINCT FROM fp
 ON CONFLICT ({key}, source_lsn, kafka_offset) DO NOTHING;
 
 -- re-derive validity only for the open versions of the keys touched by this batch
@@ -119,7 +140,8 @@ ON CONFLICT (order_item_id) DO UPDATE SET
     loaded_at    = now()
 WHERE (EXCLUDED.source_lsn, EXCLUDED.kafka_offset) > (f.source_lsn, f.kafka_offset);
 
--- history: every creation, deletion and status transition, exactly once per Kafka offset
+-- history: creations, deletions and every change of status, delivery date or customer,
+-- exactly once per source change (order_id, LSN)
 INSERT INTO core.fact_order_status_events
     (order_id, customer_id, delivery_date, previous_status, status, event_type,
      event_ts, source_lsn, kafka_partition, kafka_offset)
@@ -129,8 +151,11 @@ SELECT order_id, customer_id, delivery_date, before_status, status,
        CASE WHEN op = 'd' THEN source_ts ELSE COALESCE(updated_at, source_ts) END,
        source_lsn, kafka_partition, kafka_offset
 FROM stage.orders_cdc
-WHERE op IN ('r', 'c', 'd') OR before_status IS DISTINCT FROM status
-ON CONFLICT (kafka_partition, kafka_offset) DO NOTHING;
+WHERE op IN ('r', 'c', 'd')
+   OR before_status        IS DISTINCT FROM status
+   OR before_delivery_date IS DISTINCT FROM delivery_date
+   OR before_customer_id   IS DISTINCT FROM customer_id
+ON CONFLICT (order_id, source_lsn) DO NOTHING;
 """
 
 # 4. State AFTER the batch, then apply deltas to the serving aggregates -------------------
@@ -206,12 +231,14 @@ BATCH_LOG = """
 INSERT INTO ops.batch_log (
     batch_id, started_at, committed_at, input_rows, customers_rows, products_rows,
     orders_rows, order_items_rows, dead_letter_rows, min_source_ts, max_source_ts,
-    stage_ms, merge_ms, e2e_latency_ms)
+    stage_ms, merge_ms, e2e_latency_ms, e2e_latency_max_ms)
 VALUES (%(batch_id)s, %(started_at)s, clock_timestamp(), %(input_rows)s, %(customers)s,
         %(products)s, %(orders)s, %(order_items)s, %(dead_letters)s, %(min_ts)s, %(max_ts)s,
         %(stage_ms)s, %(merge_ms)s,
         CASE WHEN %(max_ts)s::timestamp IS NULL THEN NULL
-             ELSE (EXTRACT(EPOCH FROM clock_timestamp() - (%(max_ts)s::timestamp AT TIME ZONE 'UTC')) * 1000)::BIGINT END)
+             ELSE (EXTRACT(EPOCH FROM clock_timestamp() - (%(max_ts)s::timestamp AT TIME ZONE 'UTC')) * 1000)::BIGINT END,
+        CASE WHEN %(min_ts)s::timestamp IS NULL THEN NULL
+             ELSE (EXTRACT(EPOCH FROM clock_timestamp() - (%(min_ts)s::timestamp AT TIME ZONE 'UTC')) * 1000)::BIGINT END)
 ON CONFLICT (batch_id) DO UPDATE SET
     committed_at = EXCLUDED.committed_at,
     merge_ms     = EXCLUDED.merge_ms;
