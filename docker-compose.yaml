@@ -88,13 +88,16 @@ services:
   spark-master:
     build: ./spark
     image: acme/spark:3.5.1
+    pull_policy: build
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master",
               "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
     ports:
       - "8090:8080"
 
   spark-worker-1: &worker
+    build: ./spark
     image: acme/spark:3.5.1
+    pull_policy: build
     depends_on:
       - spark-master
     environment:
@@ -111,7 +114,9 @@ services:
       - "8092:8081"
 
   spark-app:
+    build: ./spark
     image: acme/spark:3.5.1
+    pull_policy: build
     depends_on:
       analytics-db:
         condition: service_healthy
